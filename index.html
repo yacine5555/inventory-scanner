@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Inventory Scanner</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inconsolata:wght@400;600&display=swap');
+
+:root {
+  --bg:        #f5f2eb;
+  --surface:   #ffffff;
+  --surface2:  #ede9e0;
+  --border:    #d8d2c4;
+  --ink:       #1a1814;
+  --ink-dim:   #7a7468;
+  --green:     #1d6b3e;
+  --green-bg:  #e6f4ec;
+  --orange:    #b85c00;
+  --orange-bg: #fdf0e2;
+  --red:       #c0392b;
+  --red-bg:    #fdecea;
+  --radius:    12px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { font-family: 'Syne', sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; padding-bottom: 60px; }
+
+.header {
+  background: var(--ink); color: #f5f2eb;
+  padding: 16px 20px 14px;
+  display: flex; justify-content: space-between; align-items: center;
+  position: sticky; top: 0; z-index: 200;
+}
+.header-title { font-size: 16px; font-weight: 800; letter-spacing: -.3px; }
+.header-title span { color: #c8b97a; }
+.sheets-label { font-size: 11px; font-family: 'Inconsolata', monospace; color: #aaa; display: flex; align-items: center; gap: 5px; }
+.sdot { width: 7px; height: 7px; border-radius: 50%; background: #666; transition: background .4s; }
+.sdot.ok { background: #4ade80; }
+
+.wrap { max-width: 500px; margin: 0 auto; padding: 0 16px; }
+
+.stats { display: flex; gap: 8px; padding: 14px 0 10px; }
+.stat { flex: 1; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.stat .n { font-size: 22px; font-weight: 800; font-family: 'Inconsolata', monospace; }
+.stat .l { font-size: 10px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .07em; margin-top: 2px; }
+
+.sec { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-dim); margin: 16px 0 8px; }
+
+.locs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.loc-btn { background: var(--surface); border: 1.5px solid var(--border); border-radius: 99px; padding: 7px 14px; font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--ink); transition: all .15s; }
+.loc-btn.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+.scanner-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 10px; transition: border-color .3s, box-shadow .3s; }
+.scanner-card.active-scan { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(26,24,20,.07); }
+.scanner-card.found { border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,107,62,.1); }
+.scanner-card.not-found { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(184,92,0,.08); }
+
+#tap-area { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px 20px; gap: 10px; cursor: pointer; user-select: none; transition: background .15s; }
+#tap-area:active { background: var(--surface2); }
+.cam-ring { width: 60px; height: 60px; border-radius: 50%; border: 2px dashed var(--border); display: flex; align-items: center; justify-content: center; font-size: 24px; transition: all .2s; }
+#tap-area:active .cam-ring { border-style: solid; border-color: var(--ink); }
+.tap-title { font-size: 15px; font-weight: 700; }
+.tap-sub { font-size: 12px; color: var(--ink-dim); text-align: center; line-height: 1.5; }
+
+#viewport { display: none; position: relative; background: #000; overflow: hidden; }
+#video { width: 100%; display: block; max-height: 52vw; object-fit: cover; }
+
+.overlay-wrap { position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+.scan-box { width: 62%; aspect-ratio: 2.8/1; position: relative; }
+.scan-box::before, .scan-box::after, .scan-box .c2::before, .scan-box .c2::after { content: ''; position: absolute; width: 16px; height: 16px; border-color: rgba(255,255,255,.9); border-style: solid; }
+.scan-box::before  { top:0; left:0;  border-width: 2px 0 0 2px; }
+.scan-box::after   { top:0; right:0; border-width: 2px 2px 0 0; }
+.scan-box .c2::before { bottom:0; left:0;  border-width: 0 0 2px 2px; }
+.scan-box .c2::after  { bottom:0; right:0; border-width: 0 2px 2px 0; }
+.scan-beam { position: absolute; left: 0; right: 0; height: 1.5px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.85), transparent); animation: sweep 1.8s ease-in-out infinite; top: 0; }
+@keyframes sweep { 0% { top: 0; } 50% { top: 100%; } 100% { top: 0; } }
+.cam-hint { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.55); color: #fff; font-size: 11px; font-family: 'Inconsolata', monospace; padding: 4px 12px; border-radius: 99px; white-space: nowrap; backdrop-filter: blur(4px); }
+
+.cam-controls { display: none; padding: 8px 12px; border-top: 1px solid var(--border); gap: 8px; align-items: center; }
+.cam-controls.show { display: flex; }
+.stop-btn { flex: 1; background: transparent; border: 1.5px solid var(--border); border-radius: 8px; padding: 8px; font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 600; color: var(--red); cursor: pointer; transition: all .15s; }
+.stop-btn:active { background: var(--red-bg); }
+
+#lookup-status { display: none; border-radius: var(--radius); padding: 13px 15px; margin-bottom: 10px; font-size: 13px; font-weight: 600; animation: fadeIn .2s ease; line-height: 1.4; }
+@keyframes fadeIn { from { opacity:0; transform: translateY(-4px); } to { opacity:1; transform:none; } }
+#lookup-status.looking { background: var(--surface2); border: 1.5px solid var(--border); color: var(--ink-dim); }
+#lookup-status.found-s { background: var(--green-bg); border: 1.5px solid var(--green); color: var(--green); }
+#lookup-status.nofound-s { background: var(--orange-bg); border: 1.5px solid var(--orange); color: var(--orange); }
+.status-sub { font-size: 11px; font-family: 'Inconsolata', monospace; font-weight: 400; display: block; margin-top: 3px; opacity: .8; }
+.source-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border-radius: 4px; background: rgba(29,107,62,.15); color: var(--green); float: right; }
+
+.divider { display: flex; align-items: center; gap: 8px; color: var(--ink-dim); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; margin: 4px 0 10px; }
+.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+.manual-row { display: flex; gap: 8px; margin-bottom: 14px; }
+
+input, select, textarea { background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; color: var(--ink); font-family: 'Syne', sans-serif; font-size: 14px; padding: 10px 13px; outline: none; width: 100%; transition: border-color .15s, background .15s; -webkit-appearance: none; appearance: none; }
+input:focus, select:focus, textarea:focus { border-color: var(--ink); }
+input.prefilled { border-color: var(--green) !important; background: var(--green-bg) !important; }
+input.needsfill { border-color: var(--orange) !important; background: var(--orange-bg) !important; }
+
+.lookup-btn { background: var(--ink); border: none; border-radius: 10px; color: var(--bg); font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; padding: 10px 16px; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: opacity .15s; }
+.lookup-btn:active { opacity: .75; }
+
+.form-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 10px; }
+.card-hd { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-dim); margin-bottom: 14px; }
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim); margin-bottom: 5px; }
+.req { color: var(--red); }
+
+.qty-row { display: flex; align-items: center; background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; overflow: hidden; width: 130px; }
+.qty-btn { background: transparent; border: none; width: 38px; height: 40px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink); transition: background .1s; }
+.qty-btn:active { background: var(--surface2); }
+.qty-num { flex: 1; text-align: center; border: none !important; font-family: 'Inconsolata', monospace; font-weight: 600; font-size: 16px; padding: 0 !important; width: auto !important; background: transparent; color: var(--ink); }
+.row2 { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+
+.actions { display: flex; gap: 8px; margin-bottom: 18px; }
+.btn-save { flex: 1; background: var(--ink); border: none; border-radius: 10px; color: var(--bg); font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; padding: 14px; cursor: pointer; transition: opacity .15s; }
+.btn-save:active { opacity: .8; }
+.btn-clear { background: transparent; border: 1.5px solid var(--border); border-radius: 10px; color: var(--ink-dim); font-family: 'Syne', sans-serif; font-weight: 600; font-size: 13px; padding: 14px 16px; cursor: pointer; }
+.btn-clear:active { background: var(--surface2); }
+
+.list-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.list-hd .sec { margin: 0; }
+.export-btn { background: transparent; border: 1.5px solid var(--border); border-radius: 8px; color: var(--ink-dim); font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 600; padding: 5px 10px; cursor: pointer; }
+.export-btn:active { background: var(--surface2); }
+
+.saved-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 7px; display: flex; justify-content: space-between; align-items: center; gap: 10px; animation: fadeIn .2s ease; }
+.item-name { font-size: 14px; font-weight: 700; }
+.item-meta { font-size: 11px; color: var(--ink-dim); font-family: 'Inconsolata', monospace; margin-top: 2px; }
+.item-src { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--green); background: var(--green-bg); border-radius: 4px; padding: 1px 5px; display: inline-block; margin-top: 3px; }
+.item-right { text-align: right; flex-shrink: 0; }
+.item-qty { font-family: 'Inconsolata', monospace; font-size: 13px; font-weight: 600; background: var(--surface2); border-radius: 6px; padding: 2px 8px; display: inline-block; }
+.item-loc { font-size: 10px; color: var(--ink-dim); margin-top: 3px; }
+
+.empty { text-align: center; padding: 24px; background: var(--surface); border: 1.5px dashed var(--border); border-radius: var(--radius); color: var(--ink-dim); font-size: 13px; line-height: 1.6; }
+
+#cam-err { display: none; margin-bottom: 10px; background: var(--red-bg); border: 1.5px solid var(--red); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; color: var(--red); line-height: 1.5; }
+
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(10px); background: var(--ink); color: var(--bg); font-family: 'Syne', sans-serif; font-weight: 600; font-size: 13px; padding: 10px 20px; border-radius: 99px; opacity: 0; pointer-events: none; transition: all .25s; z-index: 999; white-space: nowrap; }
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+.spin { display: inline-block; width: 11px; height: 11px; border: 2px solid rgba(120,110,100,.2); border-top-color: var(--ink-dim); border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">📦 Inventory <span>Scanner</span></div>
+  <div class="sheets-label"><span class="sdot" id="sdot"></span><span id="slbl">Connecting…</span></div>
+</div>
+
+<div class="wrap">
+
+  <div class="stats">
+    <div class="stat"><div class="n" id="sSaved">0</div><div class="l">Saved</div></div>
+    <div class="stat"><div class="n" id="sScans">0</div><div class="l">Scanned</div></div>
+    <div class="stat"><div class="n" id="sFound">0</div><div class="l">Auto-filled</div></div>
+  </div>
+
+  <div class="sec">Location</div>
+  <div class="locs">
+    <button class="loc-btn active" onclick="setLoc(this,'Warehouse')">📦 Warehouse</button>
+    <button class="loc-btn" onclick="setLoc(this,'Store 1')">🏪 Store 1</button>
+    <button class="loc-btn" onclick="setLoc(this,'Store 2')">🏪 Store 2</button>
+  </div>
+
+  <div class="sec">Scan barcode</div>
+  <div id="cam-err"></div>
+
+  <div class="scanner-card" id="scanCard">
+    <div id="tap-area" onclick="startScan()">
+      <div class="cam-ring">📷</div>
+      <div class="tap-title">Tap to scan</div>
+      <div class="tap-sub">Uses rear camera · detects EAN-13, UPC, Code 128 and more<br>then auto-looks up product name &amp; brand</div>
+    </div>
+    <div id="viewport">
+      <video id="video" autoplay muted playsinline></video>
+      <div class="overlay-wrap">
+        <div class="scan-box">
+          <div class="scan-beam"></div>
+          <div class="c2"></div>
+        </div>
+      </div>
+      <div class="cam-hint" id="camHint">Hold steady — scanning…</div>
+    </div>
+    <div class="cam-controls" id="camCtrl">
+      <button class="stop-btn" onclick="stopScan()">⏹ Stop camera</button>
+    </div>
+  </div>
+
+  <div id="lookup-status"></div>
+
+  <div class="divider">or enter barcode manually</div>
+  <div class="manual-row">
+    <input type="text" id="bCode" placeholder="e.g. 3017620422003" style="font-family:'Inconsolata',monospace;" inputmode="numeric">
+    <button class="lookup-btn" onclick="lookupBarcode(document.getElementById('bCode').value.trim())">Look up</button>
+  </div>
+
+  <div class="form-card">
+    <div class="card-hd">Product details</div>
+    <div class="field">
+      <label>Product name <span class="req">*</span></label>
+      <input type="text" id="fName" placeholder="Scan a product or type name…">
+    </div>
+    <div class="field">
+      <label>Brand</label>
+      <input type="text" id="fBrand">
+    </div>
+    <div class="field">
+      <label>Category</label>
+      <select id="fCat">
+        <option value="">Select…</option>
+        <option>Dry Food</option><option>Beverages</option>
+        <option>Cosmetics</option><option>Household</option>
+        <option>Electronics</option><option>Other</option>
+      </select>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Quantity</label>
+        <div class="qty-row">
+          <button class="qty-btn" onclick="adj(-1)">−</button>
+          <input class="qty-num" type="number" id="fQty" value="1" min="0">
+          <button class="qty-btn" onclick="adj(1)">+</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Unit</label>
+        <select id="fUnit" style="width:110px;">
+          <option>Unit</option><option>Kg</option><option>g</option>
+          <option>Litre</option><option>mL</option><option>Pack</option>
+          <option>Box</option><option>Bottle</option><option>Sachet</option>
+          <option>Tube</option><option>Piece</option><option>Carton</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Reorder level</label>
+        <input type="number" id="fReorder" placeholder="0" style="width:90px;" min="0">
+      </div>
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="fNotes" rows="2" placeholder="Optional…" style="resize:vertical;"></textarea>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-save" onclick="saveItem()">✓ Save to Google Sheets</button>
+    <button class="btn-clear" onclick="clearForm()">Clear</button>
+  </div>
+
+  <div class="list-hd">
+    <div class="sec">Saved items (<span id="listCount">0</span>)</div>
+    <button class="export-btn" onclick="exportCSV()">⬇ CSV</button>
+  </div>
+  <div id="savedList"><div class="empty">No items saved yet.<br>Scan a product above to get started.</div></div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+/* ── STATE ── */
+let curLoc = 'Warehouse';
+let saved  = [];
+let nScans = 0, nFound = 0;
+let scanning = false;
+let stream = null, raf = null;
+let detector = null;
+let lastCode = '', lastCodeAt = 0;
+
+/* ── INIT ── */
+window.onload = () => {
+  setTimeout(() => {
+    document.getElementById('sdot').classList.add('ok');
+    document.getElementById('slbl').textContent = 'Sheets ready';
+  }, 1500);
+  if (!('BarcodeDetector' in window)) {
+    showErr('Your browser does not support the native barcode scanner. On iPhone, please use Safari on iOS 17 or later. You can still look up barcodes manually using the field below.');
+  }
+};
+
+/* ── LOCATION ── */
+function setLoc(btn, name) {
+  document.querySelectorAll('.loc-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active'); curLoc = name;
+}
+
+/* ── CAMERA ── */
+async function startScan() {
+  if (scanning) return;
+  if (!('BarcodeDetector' in window)) {
+    showErr('Native BarcodeDetector not supported here. Use Safari on iOS 17+ or Chrome on Android. Alternatively, type the barcode manually below.'); return;
+  }
+  hideErr();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+  } catch(e) {
+    showErr(e.name === 'NotAllowedError'
+      ? 'Camera permission denied. Go to Settings → Safari → Camera and allow access, then try again.'
+      : 'Camera error: ' + e.message); return;
+  }
+  const v = document.getElementById('video');
+  v.srcObject = stream;
+  await v.play();
+  try { detector = new BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code','itf','codabar'] }); }
+  catch(e) { detector = new BarcodeDetector(); }
+  scanning = true;
+  document.getElementById('tap-area').style.display = 'none';
+  document.getElementById('viewport').style.display = 'block';
+  document.getElementById('camCtrl').classList.add('show');
+  document.getElementById('scanCard').classList.add('active-scan');
+  loop();
+}
+
+function loop() {
+  if (!scanning) return;
+  const v = document.getElementById('video');
+  if (v.readyState >= 2) {
+    detector.detect(v).then(codes => {
+      if (!codes.length) return;
+      const code = codes[0].rawValue;
+      const now  = Date.now();
+      if (code === lastCode && now - lastCodeAt < 3000) return;
+      lastCode = code; lastCodeAt = now;
+      onDetected(code);
+    }).catch(() => {});
+  }
+  raf = requestAnimationFrame(loop);
+}
+
+function onDetected(code) {
+  beep(); nScans++;
+  document.getElementById('sScans').textContent = nScans;
+  document.getElementById('camHint').textContent = '✅ ' + code;
+  document.getElementById('bCode').value = code;
+  const card = document.getElementById('scanCard');
+  card.style.borderColor = '#1d6b3e';
+  setTimeout(() => card.style.borderColor = '', 700);
+  stopScan();
+  lookupBarcode(code);
+}
+
+function stopScan() {
+  if (!scanning) return; scanning = false;
+  cancelAnimationFrame(raf);
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  document.getElementById('tap-area').style.display   = 'flex';
+  document.getElementById('viewport').style.display   = 'none';
+  document.getElementById('camCtrl').classList.remove('show');
+  document.getElementById('scanCard').classList.remove('active-scan');
+  document.getElementById('camHint').textContent = 'Hold steady — scanning…';
+  document.getElementById('video').srcObject = null;
+}
+
+/* ── LOOKUP ── */
+async function lookupBarcode(code) {
+  if (!code) { toast('Enter a barcode first'); return; }
+  const el = document.getElementById('lookup-status');
+  el.className = 'looking';
+  el.innerHTML = `<span class="spin"></span>Searching databases for <b>${code}</b>…`;
+  el.style.display = 'block';
+  ['fName','fBrand'].forEach(id => document.getElementById(id).classList.remove('prefilled','needsfill'));
+
+  let r = await tryOFF(code) || await tryOBF(code) || await tryUPC(code);
+
+  if (r) {
+    fill('fName',  r.name);
+    fill('fBrand', r.brand);
+    if (r.cat) { const c = mapCat(r.cat); if (c) document.getElementById('fCat').value = c; }
+    nFound++; document.getElementById('sFound').textContent = nFound;
+    el.className = 'found-s';
+    el.innerHTML = `<span class="source-tag">${r.src}</span>✅ Found: <b>${r.name}</b>${r.brand ? ' · ' + r.brand : ''}<span class="status-sub">Barcode ${code}</span>`;
+    document.getElementById('scanCard').classList.add('found');
+    setTimeout(() => document.getElementById('scanCard').classList.remove('found'), 2500);
+    toast('Auto-filled from ' + r.src);
+    document.getElementById('fQty').focus();
+  } else {
+    el.className = 'nofound-s';
+    el.innerHTML = `⚠️ Product not found in any database<span class="status-sub">Barcode: ${code} — please type the product name below</span>`;
+    document.getElementById('scanCard').classList.add('not-found');
+    setTimeout(() => document.getElementById('scanCard').classList.remove('not-found'), 2500);
+    const n = document.getElementById('fName');
+    n.classList.add('needsfill');
+    n.placeholder = 'Not found — type product name here…';
+    n.focus();
+  }
+}
+
+async function tryOFF(code) {
+  try {
+    const d = await (await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`, {signal: AbortSignal.timeout(5000)})).json();
+    if (d.status !== 1 || !d.product) return null;
+    const p = d.product;
+    const name = p.product_name_en || p.product_name || p.generic_name_en || p.generic_name || '';
+    if (!name.trim()) return null;
+    return { name: tc(name), brand: tc(p.brands || ''), cat: p.categories || '', src: 'Open Food Facts' };
+  } catch(e) { return null; }
+}
+
+async function tryOBF(code) {
+  try {
+    const d = await (await fetch(`https://world.openbeautyfacts.org/api/v0/product/${code}.json`, {signal: AbortSignal.timeout(5000)})).json();
+    if (d.status !== 1 || !d.product) return null;
+    const name = d.product.product_name_en || d.product.product_name || '';
+    if (!name.trim()) return null;
+    return { name: tc(name), brand: tc(d.product.brands || ''), cat: 'Cosmetics', src: 'Open Beauty Facts' };
+  } catch(e) { return null; }
+}
+
+async function tryUPC(code) {
+  try {
+    const d = await (await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${code}`, {signal: AbortSignal.timeout(5000)})).json();
+    if (!d.items || !d.items.length || !d.items[0].title) return null;
+    const p = d.items[0];
+    return { name: tc(p.title), brand: tc(p.brand || ''), cat: p.category || '', src: 'UPC Item DB' };
+  } catch(e) { return null; }
+}
+
+function fill(id, val) {
+  if (!val) return;
+  const el = document.getElementById(id);
+  el.value = val; el.classList.add('prefilled'); el.classList.remove('needsfill');
+}
+
+function mapCat(raw) {
+  const r = raw.toLowerCase();
+  if (/beverage|drink|water|juice|soda|tea|coffee/.test(r)) return 'Beverages';
+  if (/food|cereal|pasta|rice|grain|snack|sauce/.test(r))   return 'Dry Food';
+  if (/cosmet|beauty|skin|hair|soap|shampoo|makeup/.test(r)) return 'Cosmetics';
+  if (/household|clean|deterg|laundry/.test(r))              return 'Household';
+  if (/electron|device|cable|battery/.test(r))               return 'Electronics';
+  return '';
+}
+
+function tc(s) {
+  return s.trim().replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+/* ── FORM ── */
+function adj(d) {
+  const el = document.getElementById('fQty');
+  el.value = Math.max(0, (parseInt(el.value) || 0) + d);
+}
+
+function saveItem() {
+  const name = document.getElementById('fName').value.trim();
+  if (!name) { toast('Product name is required'); document.getElementById('fName').focus(); return; }
+  const item = {
+    barcode:  document.getElementById('bCode').value.trim(),
+    name,
+    brand:    document.getElementById('fBrand').value.trim(),
+    category: document.getElementById('fCat').value,
+    quantity: document.getElementById('fQty').value || '1',
+    unit:     document.getElementById('fUnit').value,
+    reorder:  document.getElementById('fReorder').value || '0',
+    notes:    document.getElementById('fNotes').value.trim(),
+    location: curLoc,
+    saved_at: new Date().toLocaleString('en-GB')
+  };
+  saved.unshift(item);
+  document.getElementById('sSaved').textContent  = saved.length;
+  document.getElementById('listCount').textContent = saved.length;
+  renderList(); toast('✓ Saved: ' + name); clearForm();
+  // sendToSheets(item);  ← uncomment once you add your Apps Script URL
+}
+
+function clearForm() {
+  ['bCode','fName','fBrand','fNotes','fReorder'].forEach(id => {
+    const el = document.getElementById(id);
+    el.value = ''; el.classList.remove('prefilled','needsfill');
+    if (id === 'fName') el.placeholder = 'Scan a product or type name…';
+  });
+  document.getElementById('fQty').value  = '1';
+  document.getElementById('fCat').value  = '';
+  document.getElementById('fUnit').value = 'Unit';
+  document.getElementById('lookup-status').style.display = 'none';
+}
+
+/* ── LIST ── */
+function renderList() {
+  const el = document.getElementById('savedList');
+  if (!saved.length) { el.innerHTML = '<div class="empty">No items saved yet.<br>Scan a product above to get started.</div>'; return; }
+  el.innerHTML = saved.map(i => `
+    <div class="saved-item">
+      <div>
+        <div class="item-name">${i.name}</div>
+        <div class="item-meta">${i.barcode || 'no barcode'}${i.brand ? ' · ' + i.brand : ''}</div>
+        ${i.category ? `<span class="item-src">${i.category}</span>` : ''}
+      </div>
+      <div class="item-right">
+        <div class="item-qty">${i.quantity} ${i.unit}</div>
+        <div class="item-loc">${i.location}</div>
+      </div>
+    </div>`).join('');
+}
+
+/* ── EXPORT ── */
+function exportCSV() {
+  if (!saved.length) { toast('Nothing to export yet'); return; }
+  const h = ['Barcode','Name','Brand','Category','Quantity','Unit','Reorder','Notes','Location','Saved At'];
+  const r = saved.map(i => [i.barcode,i.name,i.brand,i.category,i.quantity,i.unit,i.reorder,i.notes,i.location,i.saved_at].map(v => `"${(v||'').replace(/"/g,'""')}"`).join(','));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([[h.join(','),...r].join('\n')], {type:'text/csv'}));
+  a.download = 'inventory-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+/* ── UTILS ── */
+function beep() {
+  try {
+    const c = new (window.AudioContext||window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination); o.type = 'sine'; o.frequency.value = 1047;
+    g.gain.setValueAtTime(.25, c.currentTime); g.gain.exponentialRampToValueAtTime(.001, c.currentTime + .12);
+    o.start(); o.stop(c.currentTime + .12);
+  } catch(e) {}
+}
+function toast(msg) {
+  const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+function showErr(msg) { const e = document.getElementById('cam-err'); e.textContent = '⚠️ ' + msg; e.style.display = 'block'; }
+function hideErr() { document.getElementById('cam-err').style.display = 'none'; }
+
+/* ── GOOGLE SHEETS HOOK (add your URL) ──
+const SHEET_URL = 'YOUR_APPS_SCRIPT_WEB_APP_URL';
+async function sendToSheets(item) {
+  try { await fetch(SHEET_URL, { method:'POST', body: JSON.stringify(item) }); }
+  catch(e) { console.warn('Sheets sync failed', e); }
+}
+*/
+</script>
+</body>
+</html>
